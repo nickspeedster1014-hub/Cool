@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>School Days — Demo</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  #game { display: block; width: 100vw; height: 100vh; }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, #0b1220 0%, #1a2540 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    z-index: 10;
+    transition: opacity 0.6s ease;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay h1 {
+    font-size: 48px;
+    margin: 0 0 8px;
+    letter-spacing: 2px;
+    color: #ffd479;
+  }
+  #overlay h2 { font-weight: 400; margin: 0 0 32px; color: #aac; }
+  #overlay .controls {
+    background: rgba(0,0,0,0.35);
+    padding: 18px 28px;
+    border-radius: 12px;
+    line-height: 1.7;
+    margin-bottom: 24px;
+    color: #cde;
+  }
+  #overlay button {
+    background: #ffd479;
+    border: 0;
+    color: #21160a;
+    font-size: 18px;
+    font-weight: 600;
+    padding: 12px 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+  #overlay button:hover { background: #ffe6a8; }
+
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 6px; height: 6px;
+    margin: -3px 0 0 -3px;
+    background: rgba(255,255,255,0.7);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  #prompt {
+    position: absolute;
+    bottom: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.55);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 16px;
+    letter-spacing: 1px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  #prompt.show { opacity: 1; }
+  #subtitle {
+    position: absolute;
+    bottom: 8%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 17px;
+    font-style: italic;
+    color: #f4e9c8;
+    text-shadow: 0 1px 4px #000;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    max-width: 80%;
+    text-align: center;
+  }
+  #subtitle.show { opacity: 1; }
+  #objective {
+    position: absolute;
+    top: 18px;
+    right: 22px;
+    background: rgba(0,0,0,0.4);
+    padding: 8px 14px;
+    border-left: 3px solid #ffd479;
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+  #fade {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9;
+    transition: opacity 1.2s ease;
+  }
+  #fade.on { opacity: 1; }
+  #endcard {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 11;
+    background: #000;
+    color: #ffd479;
+    text-align: center;
+  }
+  #endcard.show { display: flex; }
+  #endcard h1 { font-size: 56px; margin: 0; letter-spacing: 4px; }
+  #endcard p { color: #aac; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="crosshair"></div>
+    <div id="objective">OBJECTIVE: Wake up</div>
+    <div id="prompt">[E] Interact</div>
+    <div id="subtitle"></div>
+  </div>
+
+  <div id="fade"></div>
+
+  <div id="overlay">
+    <h1>SCHOOL DAYS</h1>
+    <h2>— Demo —</h2>
+    <div class="controls">
+      <b>WASD</b> &nbsp; move &nbsp; · &nbsp; <b>Mouse</b> &nbsp; look<br/>
+      <b>E</b> &nbsp; interact &nbsp; · &nbsp; <b>Shift</b> &nbsp; run &nbsp; · &nbsp; <b>Esc</b> &nbsp; release mouse
+    </div>
+    <button id="startBtn">Start</button>
+  </div>
+
+  <div id="endcard">
+    <h1>TO BE CONTINUED</h1>
+    <p>Thanks for playing the demo.</p>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+    // ---------- core setup ----------
+    const canvas = document.getElementById('game');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x10131a);
+    scene.fog = new THREE.Fog(0x10131a, 8, 30);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
+
+    // player rig: a yaw object holding the camera, controlled by PointerLockControls
+    const controls = new PointerLockControls(camera, document.body);
+    scene.add(controls.getObject());
+
+    // ---------- materials ----------
+    const wallMat   = new THREE.MeshStandardMaterial({ color: 0xb8c5d6, roughness: 0.95 });
+    const floorMat  = new THREE.MeshStandardMaterial({ color: 0x6a4a2c, roughness: 0.85 });
+    const rugMat    = new THREE.MeshStandardMaterial({ color: 0x884444, roughness: 1.0 });
+    const ceilMat   = new THREE.MeshStandardMaterial({ color: 0xd9d9d9, roughness: 1.0 });
+    const woodMat   = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.7 });
+    const sheetMat  = new THREE.MeshStandardMaterial({ color: 0xe6ecf5, roughness: 1.0 });
+    const blanketMat= new THREE.MeshStandardMaterial({ color: 0x2c4a78, roughness: 0.9 });
+    const pillowMat = new THREE.MeshStandardMaterial({ color: 0xf3e9d2, roughness: 1.0 });
+    const doorMat   = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.6 });
+    const knobMat   = new THREE.MeshStandardMaterial({ color: 0xddaa44, roughness: 0.3, metalness: 0.7 });
+    const screenMat = new THREE.MeshStandardMaterial({ color: 0x111418, roughness: 0.4, emissive: 0x000000 });
+    const bookMatA  = new THREE.MeshStandardMaterial({ color: 0x8a3030, roughness: 0.8 });
+    const bookMatB  = new THREE.MeshStandardMaterial({ color: 0x305f8a, roughness: 0.8 });
+    const bookMatC  = new THREE.MeshStandardMaterial({ color: 0x4a7a3a, roughness: 0.8 });
+    const lampMat   = new THREE.MeshStandardMaterial({ color: 0xf2d27a, emissive: 0x000000, roughness: 0.7 });
+    const glassMat  = new THREE.MeshStandardMaterial({ color: 0x88c0ee, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.35 });
+    const grassMat  = new THREE.MeshStandardMaterial({ color: 0x4a7c3a, roughness: 1.0 });
+    const skyMat    = new THREE.MeshBasicMaterial({ color: 0x88baee, side: THREE.BackSide });
+
+    // ---------- world ----------
+    const world = new THREE.Group();
+    scene.add(world);
+
+    // collision boxes (axis aligned in XZ, y ignored). Each: {minX, maxX, minZ, maxZ}
+    const colliders = [];
+    function addCollider(minX, maxX, minZ, maxZ) {
+      colliders.push({ minX, maxX, minZ, maxZ });
+    }
+
+    function makeBox(w, h, d, mat, x, y, z, opts = {}) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.castShadow = opts.cast !== false;
+      m.receiveShadow = opts.receive !== false;
+      world.add(m);
+      if (opts.collide) {
+        addCollider(x - w/2, x + w/2, z - d/2, z + d/2);
+      }
+      return m;
+    }
+
+    // Layout (top-down):
+    //   Bedroom: x in [-5, 0], z in [-4, 4]
+    //   Hallway: x in [0, 5],  z in [-1, 1]
+    //   Foyer/exit door at x = 5, z = 0 (front door of house)
+    //
+    // Floor split into bedroom + hallway
+
+    const BEDROOM = { minX: -5, maxX: 0, minZ: -4, maxZ: 4 };
+    const HALL    = { minX:  0, maxX: 5, minZ: -1, maxZ: 1 };
+
+    // floors
+    function addFloor(region, mat) {
+      const w = region.maxX - region.minX;
+      const d = region.maxZ - region.minZ;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, d), mat);
+      m.position.set((region.minX + region.maxX)/2, -0.05, (region.minZ + region.maxZ)/2);
+      m.receiveShadow = true;
+      world.add(m);
+    }
+    addFloor(BEDROOM, floorMat);
+    addFloor(HALL, floorMat);
+
+    // ceiling
+    function addCeiling(region) {
+      const w = region.maxX - region.minX;
+      const d = region.maxZ - region.minZ;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), ceilMat);
+      m.position.set((region.minX + region.maxX)/2, 2.6, (region.minZ + region.maxZ)/2);
+      m.receiveShadow = true;
+      world.add(m);
+    }
+    addCeiling(BEDROOM);
+    addCeiling(HALL);
+
+    // rug under bed
+    const rug = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.02, 1.8), rugMat);
+    rug.position.set(-3.2, 0.011, 1.6);
+    rug.receiveShadow = true;
+    world.add(rug);
+
+    // ---- walls ----
+    // Bedroom wall thickness
+    const T = 0.15;
+    const WALL_H = 2.6;
+
+    // helper to add a wall (axis-aligned box) and a collider
+    function wall(x1, z1, x2, z2) {
+      const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+      const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+      const w = Math.max(maxX - minX, T);
+      const d = Math.max(maxZ - minZ, T);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, WALL_H, d), wallMat);
+      m.position.set((minX + maxX)/2, WALL_H/2, (minZ + maxZ)/2);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      world.add(m);
+      addCollider(m.position.x - w/2, m.position.x + w/2, m.position.z - d/2, m.position.z + d/2);
+      return m;
+    }
+
+    // Bedroom outer walls
+    // West wall (x = -5)
+    wall(-5 - T/2, -4, -5 + T/2, 4);
+    // North wall (z = -4) full
+    wall(-5, -4 - T/2, 0, -4 + T/2);
+    // South wall (z = 4) full
+    wall(-5,  4 - T/2, 0,  4 + T/2);
+    // East wall of bedroom (x=0) split around door at z in [-0.5, 0.5]
+    wall(0 - T/2, -4, 0 + T/2, -0.5);
+    wall(0 - T/2, 0.5, 0 + T/2, 4);
+    // top piece above bedroom door
+    {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(T, 0.6, 1.0), wallMat);
+      m.position.set(0, 2.0 + 0.3, 0);
+      m.castShadow = true;
+      world.add(m);
+    }
+
+    // Hallway walls (x in [0,5], z in [-1,1])
+    // North hall wall (z=-1)
+    wall(0, -1 - T/2, 5,  -1 + T/2);
+    // South hall wall (z=1)
+    wall(0, 1 - T/2, 5,   1 + T/2);
+    // East hall wall (x=5) - has front door cutout at z in [-0.5, 0.5]
+    wall(5 - T/2, -1, 5 + T/2, -0.5);
+    wall(5 - T/2, 0.5, 5 + T/2, 1);
+    // top piece above front door
+    {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(T, 0.4, 1.0), wallMat);
+      m.position.set(5, 2.2, 0);
+      m.castShadow = true;
+      world.add(m);
+    }
+
+    // Window on west wall of bedroom
+    {
+      const wg = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.1), glassMat);
+      wg.position.set(-5 + T/2 + 0.001, 1.5, 1.6);
+      wg.rotation.y = Math.PI / 2;
+      world.add(wg);
+      // window frame
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
+      const frameTop = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 1.7), frameMat);
+      frameTop.position.set(-5 + T/2 + 0.005, 2.05, 1.6); world.add(frameTop);
+      const frameBot = frameTop.clone(); frameBot.position.y = 0.95; world.add(frameBot);
+      const frameL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.2, 0.08), frameMat);
+      frameL.position.set(-5 + T/2 + 0.005, 1.5, 0.79); world.add(frameL);
+      const frameR = frameL.clone(); frameR.position.z = 2.41; world.add(frameR);
+      const frameMid = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.2, 0.04), frameMat);
+      frameMid.position.set(-5 + T/2 + 0.005, 1.5, 1.6); world.add(frameMid);
+    }
+
+    // ---- bedroom door (open passage already; add a visible jamb) ----
+    {
+      const jambMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 });
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 1.05), jambMat);
+      top.position.set(0, 2.0, 0); world.add(top);
+      const sL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.0, 0.05), jambMat);
+      sL.position.set(0, 1.0, -0.5); world.add(sL);
+      const sR = sL.clone(); sR.position.z = 0.5; world.add(sR);
+    }
+
+    // ---- bed ----
+    // Bed frame on -X side, head against north wall (z = -4 -> head at z ~ -3.2)
+    // Position bed: x = -3.2, z = 1.6, oriented along z-axis
+    const BED = { x: -3.2, z: 1.6 };
+    // frame
+    makeBox(1.8, 0.3, 2.6, woodMat, BED.x, 0.15, BED.z, { collide: true });
+    // mattress
+    makeBox(1.7, 0.25, 2.45, sheetMat, BED.x, 0.43, BED.z);
+    // blanket
+    makeBox(1.72, 0.05, 1.6, blanketMat, BED.x, 0.58, BED.z + 0.42);
+    // pillow
+    makeBox(1.0, 0.18, 0.45, pillowMat, BED.x, 0.65, BED.z - 0.95);
+    // headboard
+    makeBox(1.85, 0.9, 0.1, woodMat, BED.x, 0.75, BED.z - 1.3, { collide: false });
+
+    // nightstand
+    makeBox(0.6, 0.55, 0.5, woodMat, BED.x + 1.4, 0.275, BED.z - 1.0, { collide: true });
+
+    // alarm clock (interactable)
+    const clockGroup = new THREE.Group();
+    const clockBody = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.12), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+    clockBody.castShadow = true;
+    clockGroup.add(clockBody);
+    const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.08), new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2200, emissiveIntensity: 1.2 }));
+    clockFace.position.set(0, 0, 0.061);
+    clockGroup.add(clockFace);
+    clockGroup.position.set(BED.x + 1.4, 0.55 + 0.08, BED.z - 1.0);
+    world.add(clockGroup);
+
+    // ---- desk ----
+    // West side of room near window
+    const DESK = { x: -4.4, z: -2.5 };
+    // top
+    makeBox(1.4, 0.06, 0.7, woodMat, DESK.x, 0.85, DESK.z, { collide: true });
+    // legs
+    const legMat = woodMat;
+    [[-0.6,-0.3],[0.6,-0.3],[-0.6,0.3],[0.6,0.3]].forEach(([dx,dz])=>{
+      makeBox(0.08, 0.85, 0.08, legMat, DESK.x+dx, 0.425, DESK.z+dz, { collide: false });
+    });
+    // monitor
+    makeBox(0.7, 0.45, 0.04, screenMat, DESK.x + 0.1, 1.18, DESK.z - 0.15);
+    // monitor stand
+    makeBox(0.06, 0.18, 0.06, woodMat, DESK.x + 0.1, 0.97, DESK.z - 0.15);
+    makeBox(0.3, 0.02, 0.18, woodMat, DESK.x + 0.1, 0.87, DESK.z - 0.15);
+    // keyboard
+    makeBox(0.55, 0.03, 0.18, new THREE.MeshStandardMaterial({ color: 0x1a1a1a }), DESK.x + 0.1, 0.895, DESK.z + 0.12);
+    // books stacked
+    makeBox(0.32, 0.06, 0.22, bookMatA, DESK.x - 0.5, 0.91, DESK.z - 0.05);
+    makeBox(0.30, 0.06, 0.22, bookMatB, DESK.x - 0.5, 0.97, DESK.z - 0.05);
+    makeBox(0.28, 0.06, 0.22, bookMatC, DESK.x - 0.5, 1.03, DESK.z - 0.05);
+    // lamp base + shade
+    makeBox(0.14, 0.04, 0.14, new THREE.MeshStandardMaterial({ color: 0x222222 }), DESK.x + 0.55, 0.90, DESK.z - 0.18);
+    const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.32), new THREE.MeshStandardMaterial({ color: 0x2a2a2a }));
+    lampPole.position.set(DESK.x + 0.55, 1.06, DESK.z - 0.18);
+    world.add(lampPole);
+    const lampShade = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.16, 16, 1, true), lampMat);
+    lampShade.position.set(DESK.x + 0.55, 1.22, DESK.z - 0.18);
+    world.add(lampShade);
+
+    // chair
+    makeBox(0.55, 0.05, 0.55, woodMat, DESK.x + 0.15, 0.5, DESK.z + 0.85, { collide: true });
+    makeBox(0.55, 0.6, 0.05, woodMat, DESK.x + 0.15, 0.8, DESK.z + 1.10, { collide: false });
+    [[-0.22,-0.22],[0.22,-0.22],[-0.22,0.22],[0.22,0.22]].forEach(([dx,dz])=>{
+      makeBox(0.05, 0.5, 0.05, woodMat, DESK.x+0.15+dx, 0.25, DESK.z+0.85+dz, { collide: false });
+    });
+
+    // ---- dresser ----
+    makeBox(1.4, 1.1, 0.55, woodMat, -1.0, 0.55, -3.6, { collide: true });
+    // drawer lines (just thin dark boxes for detail)
+    for (let i = 0; i < 3; i++) {
+      makeBox(1.35, 0.01, 0.01, new THREE.MeshStandardMaterial({ color: 0x3a2a18 }), -1.0, 0.2 + i*0.32, -3.32, { collide: false });
+      makeBox(0.04, 0.04, 0.04, knobMat, -1.0, 0.36 + i*0.32, -3.32, { collide: false });
+    }
+
+    // poster on north wall above dresser
+    {
+      const postMat = new THREE.MeshStandardMaterial({ color: 0xffd479 });
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.2), postMat);
+      p.position.set(-1.0, 1.7, -4 + T/2 + 0.01);
+      world.add(p);
+      const accent = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.05), new THREE.MeshStandardMaterial({ color: 0x882233 }));
+      accent.position.set(-1.0, 1.5, -4 + T/2 + 0.02);
+      world.add(accent);
+    }
+
+    // backpack near bedroom door (interactable)
+    const backpackGroup = new THREE.Group();
+    const bpBody = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.55, 0.25), new THREE.MeshStandardMaterial({ color: 0x224477, roughness: 0.9 }));
+    bpBody.castShadow = true;
+    bpBody.receiveShadow = true;
+    backpackGroup.add(bpBody);
+    const bpPocket = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.06), new THREE.MeshStandardMaterial({ color: 0x335588 }));
+    bpPocket.position.set(0, -0.05, 0.16);
+    backpackGroup.add(bpPocket);
+    const bpStrap = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.04), new THREE.MeshStandardMaterial({ color: 0x112244 }));
+    bpStrap.position.set(-0.13, 0.05, -0.13);
+    backpackGroup.add(bpStrap);
+    const bpStrap2 = bpStrap.clone();
+    bpStrap2.position.x = 0.13;
+    backpackGroup.add(bpStrap2);
+    backpackGroup.position.set(-0.5, 0.275, -0.7);
+    world.add(backpackGroup);
+
+    // ---- front door (interactable, blocks until backpack picked up) ----
+    // Hinge at the -z edge of the doorway so the door swings around its left side.
+    const frontDoorHinge = new THREE.Group();
+    frontDoorHinge.position.set(5, 0.975, -0.5);
+    const fdPanel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.95, 0.95), doorMat);
+    fdPanel.position.set(0, 0, 0.5);
+    fdPanel.castShadow = true; fdPanel.receiveShadow = true;
+    frontDoorHinge.add(fdPanel);
+    const fdKnob = new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 12), knobMat);
+    fdKnob.position.set(0.06, 0, 0.85);
+    frontDoorHinge.add(fdKnob);
+    world.add(frontDoorHinge);
+    const frontDoorAnchor = new THREE.Vector3(5, 0, 0);
+    // collider for the door (will be removed when leaving)
+    const frontDoorCollider = { minX: 5 - 0.08, maxX: 5 + 0.08, minZ: -0.5, maxZ: 0.5 };
+    colliders.push(frontDoorCollider);
+
+    // ---- outside (just so window has something to look at) ----
+    {
+      // sky dome
+      const sky = new THREE.Mesh(new THREE.SphereGeometry(60, 24, 16), skyMat);
+      scene.add(sky);
+      // ground outside the house
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), grassMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.06;
+      ground.receiveShadow = true;
+      scene.add(ground);
+      // a tree visible from window
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.6), new THREE.MeshStandardMaterial({ color: 0x5a3a1f }));
+      trunk.position.set(-9, 0.8, 1.2);
+      trunk.castShadow = true;
+      scene.add(trunk);
+      const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 12), new THREE.MeshStandardMaterial({ color: 0x4d8a3a }));
+      leaves.position.set(-9, 2.0, 1.2);
+      leaves.castShadow = true;
+      scene.add(leaves);
+      // distant school building visible past the front door
+      const school = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 5), new THREE.MeshStandardMaterial({ color: 0xc9b48c }));
+      school.position.set(20, 2, 0);
+      school.castShadow = true;
+      scene.add(school);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.4, 5.4), new THREE.MeshStandardMaterial({ color: 0x6a3a30 }));
+      roof.position.set(20, 4.2, 0);
+      scene.add(roof);
+      // sidewalk
+      const path = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 14), new THREE.MeshStandardMaterial({ color: 0xa8a8a0 }));
+      path.rotation.x = -Math.PI / 2;
+      path.position.set(11, -0.05, 0);
+      scene.add(path);
+    }
+
+    // ---- lighting ----
+    const ambient = new THREE.AmbientLight(0xfff2d8, 0.35);
+    scene.add(ambient);
+
+    // sun coming through the window (low morning angle)
+    const sun = new THREE.DirectionalLight(0xfff0c8, 1.4);
+    sun.position.set(-12, 8, 6);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 40;
+    sun.shadow.camera.left = -15;
+    sun.shadow.camera.right = 15;
+    sun.shadow.camera.top = 15;
+    sun.shadow.camera.bottom = -15;
+    scene.add(sun);
+
+    // soft fill in bedroom
+    const fill = new THREE.PointLight(0xffd9a8, 0.5, 10, 2);
+    fill.position.set(-2.5, 2.3, 0);
+    scene.add(fill);
+
+    // hallway light
+    const hallLight = new THREE.PointLight(0xffe5b8, 0.6, 8, 2);
+    hallLight.position.set(2.5, 2.3, 0);
+    scene.add(hallLight);
+
+    // ---- player + state machine ----
+    const STATE = {
+      LYING: 'lying',
+      AWAKE: 'awake',
+      LEAVING: 'leaving',
+    };
+    let state = STATE.LYING;
+
+    // PointerLockControls drives the camera directly — so position lives on `camera`.
+    // We track baseY (player feet/eye base height) separately so head-bob doesn't fight
+    // with the stand-up animation.
+    const PLAYER_RADIUS = 0.28;
+    const STAND_HEIGHT = 1.65;
+    const LIE_HEIGHT = 0.7;
+
+    let baseY = LIE_HEIGHT;
+    camera.position.set(BED.x, baseY, BED.z - 0.6);
+    // Initial orientation: lying on back, looking up at the ceiling.
+    // PLC reads/writes camera.quaternion using YXZ-order euler — set it via that order.
+    {
+      const e = new THREE.Euler(1.0, 0, 0, 'YXZ');
+      camera.quaternion.setFromEuler(e);
+    }
+
+    // ---------- input ----------
+    const keys = {};
+    addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'KeyE') tryInteract(); });
+    addEventListener('keyup',   (e) => { keys[e.code] = false; });
+
+    // ---------- objectives / prompts ----------
+    const promptEl = document.getElementById('prompt');
+    const objectiveEl = document.getElementById('objective');
+    const subtitleEl = document.getElementById('subtitle');
+    const fadeEl = document.getElementById('fade');
+    const endcardEl = document.getElementById('endcard');
+    const overlayEl = document.getElementById('overlay');
+
+    function setObjective(text) { objectiveEl.textContent = 'OBJECTIVE: ' + text; }
+    function showPrompt(text) {
+      if (text) { promptEl.textContent = text; promptEl.classList.add('show'); }
+      else { promptEl.classList.remove('show'); }
+    }
+    let subtitleTimer = 0;
+    function say(text, duration = 3.0) {
+      subtitleEl.textContent = text;
+      subtitleEl.classList.add('show');
+      subtitleTimer = duration;
+    }
+
+    // ---------- interaction ----------
+    let backpackPickedUp = false;
+    let alarmOff = false;
+
+    function distXZ(ax, az, bx, bz) {
+      const dx = ax - bx, dz = az - bz;
+      return Math.sqrt(dx*dx + dz*dz);
+    }
+
+    function nearestInteractable() {
+      const px = camera.position.x, pz = camera.position.z;
+      // alarm clock
+      if (state === STATE.LYING) {
+        if (distXZ(px, pz, clockGroup.position.x, clockGroup.position.z) < 1.8) {
+          return { type: 'alarm' };
+        }
+        return null;
+      }
+      // backpack
+      if (!backpackPickedUp && distXZ(px, pz, backpackGroup.position.x, backpackGroup.position.z) < 1.0) {
+        return { type: 'backpack' };
+      }
+      // front door
+      if (distXZ(px, pz, frontDoorAnchor.x, frontDoorAnchor.z) < 1.6) {
+        return { type: 'door' };
+      }
+      return null;
+    }
+
+    function tryInteract() {
+      const it = nearestInteractable();
+      if (!it) return;
+      if (it.type === 'alarm') {
+        alarmOff = true;
+        clockFace.material.emissive = new THREE.Color(0x220000);
+        clockFace.material.emissiveIntensity = 0.2;
+        wakeUp();
+      } else if (it.type === 'backpack') {
+        backpackPickedUp = true;
+        world.remove(backpackGroup);
+        say("Got my backpack. Time to head out.", 3);
+        setObjective('Leave through the front door');
+      } else if (it.type === 'door') {
+        if (!backpackPickedUp) {
+          say("Wait — I forgot my backpack.", 2.5);
+          return;
+        }
+        leaveHouse();
+      }
+    }
+
+    function wakeUp() {
+      if (state !== STATE.LYING) return;
+      state = STATE.AWAKE;
+      say("Ugh... morning already. Better get to school.", 3.5);
+      setObjective('Grab your backpack');
+      // animate stand up: raise eye height, level pitch, and step out beside the bed
+      const startBaseY = baseY;
+      const _e = new THREE.Euler(0,0,0,'YXZ');
+      _e.setFromQuaternion(camera.quaternion);
+      const startPitch = _e.x;
+      const startYaw = _e.y;
+      const startZ = camera.position.z;
+      const targetZ = BED.z + 1.8;
+      const dur = 1.6;
+      let t = 0;
+      standAnim = (dt) => {
+        t += dt;
+        const k = Math.min(1, t / dur);
+        const ease = 1 - Math.pow(1 - k, 3);
+        baseY = startBaseY + (STAND_HEIGHT - startBaseY) * ease;
+        const pitch = startPitch + (0 - startPitch) * ease;
+        const yaw = startYaw + (-Math.PI/2 - startYaw) * ease; // face +X toward the bedroom door
+        const ne = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+        camera.quaternion.setFromEuler(ne);
+        camera.position.y = baseY;
+        camera.position.z = startZ + (targetZ - startZ) * ease;
+        if (k >= 1) standAnim = null;
+      };
+    }
+
+    function leaveHouse() {
+      if (state === STATE.LEAVING) return;
+      state = STATE.LEAVING;
+      setObjective('Go to school');
+      say("Off to school...", 2);
+      // remove front door collider so we can walk through
+      const idx = colliders.indexOf(frontDoorCollider);
+      if (idx >= 0) colliders.splice(idx, 1);
+      // swing the door open (rotate around its hinge)
+      doorSwing = { t: 0 };
+      // fade to black
+      setTimeout(() => {
+        fadeEl.classList.add('on');
+        setTimeout(() => {
+          endcardEl.classList.add('show');
+        }, 1300);
+      }, 900);
+    }
+
+    let standAnim = null;
+    let doorSwing = null;
+
+    // ---------- collision (XZ circle vs AABBs) ----------
+    function tryMove(dx, dz) {
+      const r = PLAYER_RADIUS;
+      // X axis
+      let nx = camera.position.x + dx;
+      for (const c of colliders) {
+        if (nx + r > c.minX && nx - r < c.maxX &&
+            camera.position.z + r > c.minZ && camera.position.z - r < c.maxZ) {
+          if (dx > 0) nx = c.minX - r;
+          else if (dx < 0) nx = c.maxX + r;
+        }
+      }
+      camera.position.x = nx;
+      // Z axis
+      let nz = camera.position.z + dz;
+      for (const c of colliders) {
+        if (camera.position.x + r > c.minX && camera.position.x - r < c.maxX &&
+            nz + r > c.minZ && nz - r < c.maxZ) {
+          if (dz > 0) nz = c.minZ - r;
+          else if (dz < 0) nz = c.maxZ + r;
+        }
+      }
+      camera.position.z = nz;
+    }
+
+    // ---------- main loop ----------
+    const clock = new THREE.Clock();
+    let alarmBlinkT = 0;
+
+    function animate() {
+      const dt = Math.min(clock.getDelta(), 0.05);
+      requestAnimationFrame(animate);
+
+      // alarm blink
+      if (!alarmOff) {
+        alarmBlinkT += dt;
+        const k = (Math.sin(alarmBlinkT * 4) + 1) / 2;
+        clockFace.material.emissiveIntensity = 0.6 + k * 1.2;
+      }
+
+      // state-driven anims
+      if (standAnim) standAnim(dt);
+      if (doorSwing) {
+        doorSwing.t += dt;
+        const k = Math.min(1, doorSwing.t / 0.9);
+        const e = 1 - Math.pow(1 - k, 3);
+        frontDoorHinge.rotation.y = -e * (Math.PI * 0.55);
+      }
+
+      // movement (only when awake / leaving — not while still in bed)
+      let bob = 0;
+      if (state !== STATE.LYING && !standAnim) {
+        const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 4.0 : 2.4;
+        let f = 0, s = 0;
+        if (keys['KeyW'] || keys['ArrowUp'])    f += 1;
+        if (keys['KeyS'] || keys['ArrowDown'])  f -= 1;
+        if (keys['KeyD'] || keys['ArrowRight']) s += 1;
+        if (keys['KeyA'] || keys['ArrowLeft'])  s -= 1;
+        if (f !== 0 || s !== 0) {
+          // forward dir in XZ from current camera orientation
+          const fwd = new THREE.Vector3();
+          controls.getDirection(fwd);
+          fwd.y = 0;
+          if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+          fwd.normalize();
+          const right = new THREE.Vector3(-fwd.z, 0, fwd.x); // 90° CW in XZ
+          let mx = fwd.x * f + right.x * s;
+          let mz = fwd.z * f + right.z * s;
+          const len = Math.hypot(mx, mz);
+          if (len > 0) { mx /= len; mz /= len; }
+          tryMove(mx * speed * dt, mz * speed * dt);
+
+          const t = performance.now() * 0.001;
+          bob = Math.sin(t * 8) * 0.025;
+        }
+      }
+      if (!standAnim) camera.position.y = baseY + bob;
+
+      // prompts
+      if (controls.isLocked) {
+        const it = nearestInteractable();
+        if (it) {
+          if (it.type === 'alarm') showPrompt('[E] Turn off alarm');
+          else if (it.type === 'backpack') showPrompt('[E] Pick up backpack');
+          else if (it.type === 'door') showPrompt(backpackPickedUp ? '[E] Open door' : 'Backpack first...');
+        } else {
+          showPrompt('');
+        }
+      } else {
+        showPrompt('');
+      }
+
+      // subtitle timer
+      if (subtitleTimer > 0) {
+        subtitleTimer -= dt;
+        if (subtitleTimer <= 0) subtitleEl.classList.remove('show');
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ---------- resize ----------
+    addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ---------- start flow ----------
+    document.getElementById('startBtn').addEventListener('click', () => {
+      overlayEl.classList.add('hidden');
+      controls.lock();
+      setTimeout(() => {
+        say("...the alarm. Turn it off.", 3.5);
+        setObjective('Turn off the alarm');
+      }, 600);
+    });
+
+    controls.addEventListener('lock', () => {});
+    controls.addEventListener('unlock', () => {
+      // soft pause: nothing to do, movement keys won't affect since pointer not locked
+      // (we still allow movement via keys but it's fine; user sees overlay if visible)
+    });
+  </script>
+</body>
+</html>
