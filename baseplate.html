@@ -20,6 +20,8 @@
     background: rgba(255,255,255,0.9); border: 0; border-radius: 8px; padding: 8px 16px;
     font-size: 14px; font-weight: 700; color: #333; cursor: pointer; }
   #reset:hover { background: #fff; }
+  #err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #fff; background: #b23; font-size: 18px; text-align: center; padding: 40px; z-index: 20; }
 </style>
 </head>
 <body>
@@ -30,21 +32,20 @@
     <b>Drag</b> orbit camera &nbsp;·&nbsp; <b>Scroll</b> zoom &nbsp;·&nbsp; <b>Shift</b> run
   </div>
   <button id="reset">Reset position</button>
+  <div id="err">Couldn't load the 3D engine.<br/>This file needs an internet connection the first time you open it.</div>
 
-  <script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-  </script>
-
-  <script type="module">
-    import * as THREE from 'three';
-
+  <!-- Classic global build: works by double-clicking the file (no server needed) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  if (!window.THREE) { document.getElementById('err').style.display = 'flex'; }
+  else (function () {
     const canvas = document.getElementById('game');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.outputEncoding = THREE.sRGBEncoding;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x86c5ec);
@@ -65,7 +66,6 @@
     sun.shadow.camera.top = S; sun.shadow.camera.bottom = -S;
     sun.shadow.bias = -0.0004;
     scene.add(sun);
-    // keep the shadow frustum following the player
     scene.add(sun.target);
 
     // ---------- baseplate with stud texture ----------
@@ -76,11 +76,9 @@
       const ctx = c.getContext('2d');
       ctx.fillStyle = '#9d9c9f';
       ctx.fillRect(0, 0, 128, 128);
-      // cell separation lines
       ctx.strokeStyle = 'rgba(0,0,0,0.06)';
       ctx.lineWidth = 2;
       ctx.strokeRect(1, 1, 126, 126);
-      // raised stud
       const cx = 64, cy = 64, r = 38;
       const g = ctx.createRadialGradient(cx - 12, cy - 12, 4, cx, cy, r);
       g.addColorStop(0, '#bdbcbf');
@@ -93,9 +91,9 @@
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
       const tex = new THREE.CanvasTexture(c);
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(BASE_SIZE / 4, BASE_SIZE / 4); // one stud every 4 units
+      tex.repeat.set(BASE_SIZE / 4, BASE_SIZE / 4);
       tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.encoding = THREE.sRGBEncoding;
       return tex;
     }
     const baseTop = new THREE.Mesh(
@@ -115,39 +113,27 @@
 
     // ---------- spawn location pad ----------
     const spawn = new THREE.Group();
-    const padBase = new THREE.Mesh(
-      new THREE.BoxGeometry(8, 1, 8),
-      new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.9 })
-    );
-    padBase.position.y = 0.5;
-    padBase.castShadow = true; padBase.receiveShadow = true;
+    const padBase = new THREE.Mesh(new THREE.BoxGeometry(8, 1, 8),
+      new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.9 }));
+    padBase.position.y = 0.5; padBase.castShadow = true; padBase.receiveShadow = true;
     spawn.add(padBase);
-    const padTop = new THREE.Mesh(
-      new THREE.BoxGeometry(7, 0.2, 7),
-      new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.85 })
-    );
-    padTop.position.y = 1.05;
-    padTop.receiveShadow = true;
+    const padTop = new THREE.Mesh(new THREE.BoxGeometry(7, 0.2, 7),
+      new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.85 }));
+    padTop.position.y = 1.05; padTop.receiveShadow = true;
     spawn.add(padTop);
-    // little forward arrow
-    const arrow = new THREE.Mesh(
-      new THREE.ConeGeometry(1.2, 2.4, 4),
-      new THREE.MeshStandardMaterial({ color: 0x4c8bf5, roughness: 0.7 })
-    );
-    arrow.rotation.x = Math.PI / 2;
-    arrow.rotation.y = Math.PI / 4;
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.4, 4),
+      new THREE.MeshStandardMaterial({ color: 0x4c8bf5, roughness: 0.7 }));
+    arrow.rotation.x = Math.PI / 2; arrow.rotation.y = Math.PI / 4;
     arrow.position.set(0, 1.2, -1.5);
     spawn.add(arrow);
     scene.add(spawn);
 
-    // a few decorative bricks scattered around (the classic studio props)
+    // scattered colored bricks (classic Studio props)
     const brickColors = [0xc4281c, 0xf5cd30, 0x0a6ce7, 0x4caf50, 0xe8912f];
     for (let i = 0; i < 7; i++) {
       const w = 4 + Math.random() * 6, h = 2 + Math.random() * 4, d = 4 + Math.random() * 6;
-      const b = new THREE.Mesh(
-        new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshStandardMaterial({ color: brickColors[i % brickColors.length], roughness: 0.8 })
-      );
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({ color: brickColors[i % brickColors.length], roughness: 0.8 }));
       const ang = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 70;
       b.position.set(Math.cos(ang) * dist, h / 2, Math.sin(ang) * dist);
@@ -157,59 +143,42 @@
     }
 
     // ---------- character ("Noob") ----------
-    // Built so the group origin is at the feet (y = 0 = ground).
-    const NOOB = {
-      head: 0xf3c000,   // bright yellow
-      arm:  0xf3c000,   // bright yellow
-      torso:0x0a6ce7,   // bright blue
-      legs: 0x4caf50,   // bright green
-    };
+    const NOOB = { head: 0xf3c000, arm: 0xf3c000, torso: 0x0a6ce7, legs: 0x4caf50 };
     function partMat(color) { return new THREE.MeshStandardMaterial({ color, roughness: 0.75 }); }
 
     function makeFaceTexture() {
       const c = document.createElement('canvas');
       c.width = c.height = 128;
       const ctx = c.getContext('2d');
-      ctx.fillStyle = '#f3c000';
-      ctx.fillRect(0, 0, 128, 128);
+      ctx.fillStyle = '#f3c000'; ctx.fillRect(0, 0, 128, 128);
       ctx.fillStyle = '#1a1a1a';
-      // eyes
       ctx.beginPath(); ctx.ellipse(44, 52, 8, 13, 0, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.ellipse(84, 52, 8, 13, 0, 0, Math.PI * 2); ctx.fill();
-      // smile
       ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.strokeStyle = '#1a1a1a';
       ctx.beginPath(); ctx.arc(64, 70, 22, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
       const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.encoding = THREE.sRGBEncoding;
       return tex;
     }
 
     const character = new THREE.Group();
 
-    // torso: y 2..4
     const torso = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 1), partMat(NOOB.torso));
-    torso.position.y = 3;
-    torso.castShadow = true; torso.receiveShadow = true;
+    torso.position.y = 3; torso.castShadow = true; torso.receiveShadow = true;
     character.add(torso);
 
-    // head: cube on top, face on +Z
     const headFace = new THREE.MeshStandardMaterial({ map: makeFaceTexture(), roughness: 0.6 });
     const headPlain = partMat(NOOB.head);
-    const head = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 1.5, 1.5),
-      [headPlain, headPlain, headPlain, headPlain, headFace, headPlain]
-    );
-    head.position.y = 4 + 0.75;
-    head.castShadow = true;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5),
+      [headPlain, headPlain, headPlain, headPlain, headFace, headPlain]);
+    head.position.y = 4 + 0.75; head.castShadow = true;
     character.add(head);
 
-    // limb pivot helper: pivot at the top, mesh hangs below
     function makeLimb(color, x, pivotY) {
       const pivot = new THREE.Group();
       pivot.position.set(x, pivotY, 0);
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), partMat(color));
-      mesh.position.y = -1;
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.position.y = -1; mesh.castShadow = true; mesh.receiveShadow = true;
       pivot.add(mesh);
       character.add(pivot);
       return pivot;
@@ -243,7 +212,6 @@
     }, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // touch support (one finger orbit)
     canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length) { dragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; }
     }, { passive: true });
@@ -265,26 +233,21 @@
     addEventListener('keyup', (e) => { keys[e.code] = false; });
 
     document.getElementById('reset').addEventListener('click', () => {
-      character.position.copy(SPAWN_POS);
-      vy = 0; grounded = true;
+      character.position.copy(SPAWN_POS); vy = 0; grounded = true;
     });
 
     // ---------- physics / movement ----------
-    let vy = 0;
-    let grounded = true;
-    const GRAVITY = 70;
-    const JUMP = 26;
+    let vy = 0, grounded = true;
+    const GRAVITY = 70, JUMP = 26;
     let walkPhase = 0;
-    let facing = character.rotation.y; // smoothed yaw
+    let facing = character.rotation.y;
 
     const clock = new THREE.Clock();
-    const tmpFwd = new THREE.Vector3();
 
     function animate() {
       const dt = Math.min(clock.getDelta(), 0.05);
       requestAnimationFrame(animate);
 
-      // movement direction relative to camera yaw
       let ix = 0, iz = 0;
       if (keys['KeyW'] || keys['ArrowUp'])    iz += 1;
       if (keys['KeyS'] || keys['ArrowDown'])  iz -= 1;
@@ -296,7 +259,6 @@
       const speed = run ? 28 : 16;
 
       if (moving) {
-        // camera forward (toward where camera looks, on XZ)
         const camFwdX = -Math.sin(cam.yaw);
         const camFwdZ = -Math.cos(cam.yaw);
         const camRightX = Math.sin(cam.yaw - Math.PI / 2);
@@ -309,56 +271,46 @@
         character.position.x += mx * speed * dt;
         character.position.z += mz * speed * dt;
 
-        // face movement direction (face is on +Z, so atan2 of the move vector)
         const targetFacing = Math.atan2(mx, mz);
-        // shortest-arc lerp
         let diff = targetFacing - facing;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         facing += diff * Math.min(1, dt * 14);
         character.rotation.y = facing;
 
-        // keep on the baseplate
         const lim = BASE_SIZE / 2 - 2;
         character.position.x = Math.max(-lim, Math.min(lim, character.position.x));
         character.position.z = Math.max(-lim, Math.min(lim, character.position.z));
       }
 
-      // jump + gravity
       if (keys['Space'] && grounded) { vy = JUMP; grounded = false; }
       vy -= GRAVITY * dt;
       character.position.y += vy * dt;
       if (character.position.y <= 0) { character.position.y = 0; vy = 0; grounded = true; }
 
-      // limb animation
       if (!grounded) {
-        // tuck pose in the air
-        leftArm.rotation.x  = -0.5; rightArm.rotation.x = -0.5;
-        leftLeg.rotation.x  = 0.3;  rightLeg.rotation.x = -0.3;
+        leftArm.rotation.x = -0.5; rightArm.rotation.x = -0.5;
+        leftLeg.rotation.x = 0.3;  rightLeg.rotation.x = -0.3;
       } else if (moving) {
         walkPhase += dt * (run ? 16 : 11);
         const sw = Math.sin(walkPhase) * 0.9;
-        leftLeg.rotation.x  =  sw;  rightLeg.rotation.x = -sw;
-        leftArm.rotation.x  = -sw;  rightArm.rotation.x =  sw;
+        leftLeg.rotation.x =  sw;  rightLeg.rotation.x = -sw;
+        leftArm.rotation.x = -sw;  rightArm.rotation.x =  sw;
       } else {
-        // ease back to rest
-        for (const p of [leftArm, rightArm, leftLeg, rightLeg]) p.rotation.x *= 0.8;
+        leftArm.rotation.x *= 0.8; rightArm.rotation.x *= 0.8;
+        leftLeg.rotation.x *= 0.8; rightLeg.rotation.x *= 0.8;
       }
 
-      // ---------- camera follow ----------
-      const target = new THREE.Vector3(
-        character.position.x,
-        character.position.y + 4,
-        character.position.z
-      );
+      const tx = character.position.x;
+      const ty = character.position.y + 4;
+      const tz = character.position.z;
       const cp = camera.position;
-      cp.x = target.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist;
-      cp.y = target.y + Math.sin(cam.pitch) * cam.dist;
-      cp.z = target.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist;
+      cp.x = tx + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist;
+      cp.y = ty + Math.sin(cam.pitch) * cam.dist;
+      cp.z = tz + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist;
       if (cp.y < 1) cp.y = 1;
-      camera.lookAt(target);
+      camera.lookAt(tx, ty, tz);
 
-      // move the sun + shadow box with the player
       sun.position.set(character.position.x + 60, 120, character.position.z + 40);
       sun.target.position.copy(character.position);
 
@@ -371,6 +323,7 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
+  })();
   </script>
 </body>
 </html>
